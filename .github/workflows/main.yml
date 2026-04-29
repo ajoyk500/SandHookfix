@@ -1,0 +1,106 @@
+name: Build SandHook AAR
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Extract ZIP
+        run: |
+          unzip -q "*.zip" -d extracted
+
+      - name: Find Project Folder
+        run: |
+          cd extracted
+          PROJECT_DIR=$(find . -name "settings.gradle" | head -n 1 | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install Android SDK Commandline Tools
+        run: |
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT/cmdline-tools
+
+          wget https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip -O tools.zip
+
+          unzip -q tools.zip
+
+          mv cmdline-tools latest
+
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+
+      - name: Accept Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install SDK / NDK / CMake
+        run: |
+          sdkmanager \
+          "platform-tools" \
+          "platforms;android-36" \
+          "build-tools;36.0.0" \
+          "cmake;3.22.1" \
+          "ndk;27.0.12077973"
+
+      - name: Grant Gradle Permission
+        run: |
+          cd extracted/$PROJECT_DIR
+          chmod +x gradlew
+
+      - name: Clean Project
+        run: |
+          cd extracted/$PROJECT_DIR
+          ./gradlew clean
+
+      - name: Build hooklib AAR
+        run: |
+          cd extracted/$PROJECT_DIR
+          ./gradlew :hooklib:assembleRelease --stacktrace
+
+      - name: Build nativehook AAR
+        run: |
+          cd extracted/$PROJECT_DIR
+          ./gradlew :nativehook:assembleRelease --stacktrace
+
+      - name: Build xposedcompat AAR
+        run: |
+          cd extracted/$PROJECT_DIR
+          ./gradlew :xposedcompat:assembleRelease --stacktrace
+
+      - name: Upload hooklib AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: hooklib-aar
+          path: extracted/**/hooklib/build/outputs/aar/*.aar
+
+      - name: Upload nativehook AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: nativehook-aar
+          path: extracted/**/nativehook/build/outputs/aar/*.aar
+
+      - name: Upload xposedcompat AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: xposedcompat-aar
+          path: extracted/**/xposedcompat/build/outputs/aar/*.aar
